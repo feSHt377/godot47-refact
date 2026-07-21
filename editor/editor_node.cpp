@@ -6290,6 +6290,11 @@ void EditorNode::_save_editor_layout() {
 		filesystem_docks.push_back(layout_key);
 	}
 	config->set_value("docks", "filesystem_dock_instances", filesystem_docks);
+	PackedStringArray inspector_docks;
+	for (const String &layout_key : inspector_dock_instance_keys) {
+		inspector_docks.push_back(layout_key);
+	}
+	config->set_value("docks", "inspector_dock_instances", inspector_docks);
 	_save_open_scenes_to_config(config);
 	_save_central_editor_layout_to_config(config);
 	_save_window_settings_to_config(config, "EditorWindow");
@@ -6349,6 +6354,14 @@ void EditorNode::_load_editor_layout() {
 			for (const String &layout_key : filesystem_docks) {
 				if (layout_key.begins_with("FileSystem_")) {
 					create_file_system_dock(layout_key);
+				}
+			}
+		}
+		if (config->has_section_key("docks", "inspector_dock_instances")) {
+			const PackedStringArray inspector_docks = config->get_value("docks", "inspector_dock_instances");
+			for (const String &layout_key : inspector_docks) {
+				if (layout_key.begins_with("Inspector_")) {
+					create_inspector_dock(layout_key);
 				}
 			}
 		}
@@ -8400,6 +8413,35 @@ FileSystemDock *EditorNode::create_file_system_dock(const String &p_layout_key) 
 	return filesystem_dock;
 }
 
+InspectorDock *EditorNode::create_inspector_dock(const String &p_layout_key) {
+	const bool is_primary_dock = InspectorDock::get_singleton() == nullptr;
+	InspectorDock *inspector_dock = memnew(InspectorDock(editor_data));
+
+	if (!is_primary_dock) {
+		String dock_id = p_layout_key;
+		if (dock_id.is_empty()) {
+			inspector_dock_instance_count++;
+			dock_id = vformat("Inspector_%d", inspector_dock_instance_count);
+		} else {
+			inspector_dock_instance_count = MAX(inspector_dock_instance_count, dock_id.trim_prefix("Inspector_").to_int());
+		}
+		inspector_dock->set_name(dock_id);
+		inspector_dock->set_title(vformat(TTRC("Inspector %d"), dock_id.trim_prefix("Inspector_").to_int()));
+		inspector_dock->set_layout_key(dock_id);
+		inspector_dock->set_dock_shortcut(Ref<Shortcut>());
+		inspector_dock->set_closable(true);
+		inspector_dock_instance_keys.push_back(dock_id);
+	}
+
+	editor_dock_manager->add_dock(inspector_dock);
+	if (!is_primary_dock && p_layout_key.is_empty()) {
+		inspector_dock->follow_primary(InspectorDock::get_singleton()->get_current_object());
+		editor_dock_manager->focus_dock(inspector_dock);
+	}
+
+	return inspector_dock;
+}
+
 EditorNode::EditorNode() {
 	DEV_ASSERT(!singleton);
 	singleton = this;
@@ -9221,8 +9263,7 @@ EditorNode::EditorNode() {
 
 	FileSystemDock *filesystem_dock = create_file_system_dock();
 
-	memnew(InspectorDock(editor_data));
-	editor_dock_manager->add_dock(InspectorDock::get_singleton());
+	create_inspector_dock();
 
 	memnew(SignalsDock);
 	editor_dock_manager->add_dock(SignalsDock::get_singleton());
